@@ -1,5 +1,5 @@
 'use client'
-import { useRef, useState, useCallback } from 'react'
+import { useRef, useState, useCallback, useEffect } from 'react'
 import CropModal from './components/CropModal'
 import PagePreview from './components/PagePreview'
 
@@ -24,6 +24,7 @@ const PAGE_MM: Record<PageSize, { w: number; h: number }> = {
 }
 
 export default function Home() {
+  const [isMobile, setIsMobile] = useState(false)
   const [pageSize, setPageSize] = useState<PageSize>('A4')
   const [frontImg, setFrontImg] = useState<string | null>(null)
   const [backImg, setBackImg] = useState<string | null>(null)
@@ -36,6 +37,13 @@ export default function Home() {
 
   const layout = LAYOUTS[pageSize]
   const perSide = layout.perSide // Exact slots per page based on layout
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 900)
+    onResize()
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   const triggerUpload = (side: 'front' | 'back') => {
     currentSide.current = side
@@ -169,7 +177,7 @@ export default function Home() {
       {/* Header */}
       <header style={{
         borderBottom: '0.5px solid var(--border)',
-        padding: '14px 24px',
+        padding: isMobile ? '12px 14px' : '14px 24px',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         background: 'var(--bg2)',
       }}>
@@ -198,14 +206,16 @@ export default function Home() {
         </div>
       </header>
 
-      <div style={{ display: 'flex', gap: 0, minHeight: 'calc(100vh - 61px)' }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 0, minHeight: 'calc(100vh - 61px)' }}>
 
         {/* Left sidebar */}
         <aside style={{
-          width: 240, flexShrink: 0,
+          width: isMobile ? '100%' : 240,
+          flexShrink: 0,
           background: 'var(--bg2)',
-          borderRight: '0.5px solid var(--border)',
-          padding: '20px 16px',
+          borderRight: isMobile ? 'none' : '0.5px solid var(--border)',
+          borderBottom: isMobile ? '0.5px solid var(--border)' : 'none',
+          padding: isMobile ? '14px' : '20px 16px',
           display: 'flex', flexDirection: 'column', gap: 20,
         }}>
 
@@ -292,7 +302,7 @@ export default function Home() {
             )}
           </div>
 
-          <div style={{ flex: 1 }} />
+          {!isMobile && <div style={{ flex: 1 }} />}
 
           {/* PDF Download */}
           <button
@@ -316,7 +326,7 @@ export default function Home() {
         {/* Main preview area */}
         <main style={{
           flex: 1,
-          padding: '24px',
+          padding: isMobile ? '14px' : '24px',
           overflow: 'auto',
           background: 'var(--bg3)',
         }}>
@@ -328,7 +338,7 @@ export default function Home() {
             </span>
             <div style={{ height: 1, flex: 1, background: 'var(--border)' }} />
             <span style={{
-              fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)',
+              fontFamily: 'var(--font-mono)', fontSize: isMobile ? 10 : 11, color: 'var(--text3)',
               padding: '3px 8px', border: '0.5px solid var(--border)', borderRadius: 4,
             }}>
               {pageSize} · {quantity}/{perSide} slots
@@ -338,7 +348,7 @@ export default function Home() {
           {/* Two page previews side by side */}
           <div style={{
             display: 'flex',
-            gap: 40,
+            gap: isMobile ? 18 : 40,
             alignItems: 'flex-start',
             justifyContent: 'center',
             flexWrap: 'wrap',
@@ -351,6 +361,7 @@ export default function Home() {
               label={`Page 1 — Front Side`}
               type="front"
               rotated={layout.rotated}
+              compact={isMobile}
             />
             <PagePreview
               pageSize={pageSize}
@@ -360,6 +371,7 @@ export default function Home() {
               label={`Page 2 — Back Side`}
               type="back"
               rotated={layout.rotated}
+              compact={isMobile}
             />
           </div>
 
@@ -372,6 +384,7 @@ export default function Home() {
             padding: '12px 16px',
             display: 'flex', gap: 12, alignItems: 'flex-start',
             maxWidth: 620, marginLeft: 'auto', marginRight: 'auto',
+            width: '100%',
           }}>
             <span style={{ fontSize: 18, flexShrink: 0 }}>💡</span>
             <div>

@@ -15,6 +15,7 @@ interface PagePreviewProps {
   label: string
   type: 'front' | 'back'
   rotated?: boolean
+  compact?: boolean
 }
 
 // Real mm dimensions scaled to display pixels
@@ -28,11 +29,13 @@ const PAGE_DISPLAY = {
 const CNIC_MM = { w: 85.6, h: 54 }
 const MARGIN_MM = 4
 
-export default function PagePreview({ pageSize, slots, cols, rows, label, type, rotated = false }: PagePreviewProps) {
+export default function PagePreview({ pageSize, slots, cols, rows, label, type, rotated = false, compact = false }: PagePreviewProps) {
   const page = PAGE_DISPLAY[pageSize]
 
   // Scale: show page at a reasonable screen size
-  const SCALE = pageSize === 'A4' ? 1.9 : pageSize === 'A5' ? 2.4 : 3.2
+  const SCALE = compact
+    ? pageSize === 'A4' ? 1.1 : pageSize === 'A5' ? 1.45 : 1.9
+    : pageSize === 'A4' ? 1.9 : pageSize === 'A5' ? 2.4 : 3.2
   const pxW = Math.round(page.w * SCALE)
   const pxH = Math.round(page.h * SCALE)
 
