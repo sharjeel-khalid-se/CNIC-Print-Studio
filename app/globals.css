@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+
+:root {
+  --font-main: 'IBM Plex Sans', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+  --green: #00c896;
+  --green-dim: #00c89622;
+  --green-border: #00c89644;
+  --bg: #0a0d0f;
+  --bg2: #111518;
+  --bg3: #181e22;
+  --border: #ffffff14;
+  --border2: #ffffff22;
+  --text: #e8edf0;
+  --text2: #8a9aa6;
+  --text3: #4a5a66;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: var(--bg); color: var(--text); font-family: var(--font-main); }
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+.btn-green {
+  background: var(--green);
+  color: #000;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 13px;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 20px;
+  cursor: pointer;
+  transition: all .15s;
+  letter-spacing: .5px;
+}
+.btn-green:hover { filter: brightness(1.1); transform: translateY(-1px); }
+.btn-green:active { transform: translateY(0); }
+.btn-green:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+
+.btn-outline {
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  border: 0.5px solid var(--border2);
+  border-radius: 6px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.btn-outline:hover { border-color: var(--green); color: var(--green); }
+.btn-outline.active { background: var(--green-dim); border-color: var(--green); color: var(--green); }
