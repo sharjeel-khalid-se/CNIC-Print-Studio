@@ -300,6 +300,21 @@ export default function CropModal({ image, title, onConfirm, onClose }: CropModa
   const [showGrid, setShowGrid]   = useState(true)
   const [brightness, setBrightness] = useState(0)   // -100 to 100
   const [contrast, setContrast]   = useState(0)     // -100 to 100
+  const [isCompactLayout, setIsCompactLayout] = useState(false)
+
+  useEffect(() => {
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const updateLayout = () => setIsCompactLayout(window.innerWidth < 1100)
+    updateLayout()
+    window.addEventListener('resize', updateLayout)
+
+    return () => {
+      document.body.style.overflow = prev
+      window.removeEventListener('resize', updateLayout)
+    }
+  }, [])
 
   // Scan mode: 4 draggable corner handles
   const [corners, setCorners] = useState<Point[]>([])  // TL TR BR BL in canvas coords
@@ -314,8 +329,9 @@ export default function CropModal({ image, title, onConfirm, onClose }: CropModa
   useEffect(() => {
     const canvas = canvasRef.current; if (!canvas) return
     const { w: imgW, h: imgH } = getRotatedDims()
-    const maxW = Math.min(520, window.innerWidth * 0.85)
-    const scale = maxW / imgW
+    const maxW = Math.max(320, window.innerWidth * 0.68)
+    const maxH = Math.max(280, window.innerHeight * 0.62)
+    const scale = Math.min(maxW / imgW, maxH / imgH)
     const finalScale = scale * zoom
     setFitScale(scale)
     setDisplayScale(finalScale)
@@ -348,8 +364,8 @@ export default function CropModal({ image, title, onConfirm, onClose }: CropModa
   const draw = useCallback(() => {
     const canvas = canvasRef.current; if (!canvas) return
     const ctx = canvas.getContext('2d')!
-    const { w: imgW, h: imgH } = getRotatedDims()
-    const sw = imgW * displayScale, sh = imgH * displayScale
+    const drawW = image.width * displayScale
+    const drawH = image.height * displayScale
     const livePreview = buildLivePreview()
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
@@ -357,7 +373,7 @@ export default function CropModal({ image, title, onConfirm, onClose }: CropModa
     ctx.save()
     ctx.translate(canvas.width / 2, canvas.height / 2)
     ctx.rotate((rotation * Math.PI) / 180)
-    ctx.drawImage(livePreview, -sw/2, -sh/2, sw, sh)
+    ctx.drawImage(livePreview, -drawW/2, -drawH/2, drawW, drawH)
     ctx.restore()
 
     if (mode === 'crop' && cropStart && cropEnd) {
@@ -375,7 +391,7 @@ export default function CropModal({ image, title, onConfirm, onClose }: CropModa
       ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip()
       ctx.translate(canvas.width / 2, canvas.height / 2)
       ctx.rotate((rotation * Math.PI) / 180)
-      ctx.drawImage(livePreview, -sw/2, -sh/2, sw, sh)
+      ctx.drawImage(livePreview, -drawW/2, -drawH/2, drawW, drawH)
       ctx.restore()
 
       // Rule-of-thirds grid
@@ -426,7 +442,7 @@ export default function CropModal({ image, title, onConfirm, onClose }: CropModa
       ctx.closePath(); ctx.clip()
       ctx.translate(canvas.width/2, canvas.height/2)
       ctx.rotate((rotation*Math.PI)/180)
-      ctx.drawImage(livePreview, -sw/2, -sh/2, sw, sh)
+      ctx.drawImage(livePreview, -drawW/2, -drawH/2, drawW, drawH)
       ctx.restore()
 
       // Polygon border
@@ -689,13 +705,50 @@ export default function CropModal({ image, title, onConfirm, onClose }: CropModa
   // ─── Styles ────────────────────────────────────────────────────────────────────
   const s = {
     overlay: {
-      position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.88)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999,
+      position: 'fixed' as const,
+      inset: 0,
+      background: 'linear-gradient(180deg, #02050b 0%, #040912 100%)',
+      zIndex: 9999,
     },
     modal: {
-      background: 'var(--bg2,#0f1117)', border: '0.5px solid var(--border2,#2a2d36)',
-      borderRadius: 16, padding: '1.25rem', maxWidth: 580, width: '94vw',
-      maxHeight: '95vh', overflowY: 'auto' as const, display: 'flex', flexDirection: 'column' as const, gap: 10,
+      width: '100vw',
+      height: '100vh',
+      background: 'transparent',
+      display: 'flex',
+      flexDirection: 'column' as const,
+      gap: 12,
+      padding: '14px',
+      boxSizing: 'border-box' as const,
+      overflow: 'hidden' as const,
+    },
+    workspace: {
+      display: 'grid',
+      gridTemplateColumns: 'minmax(0,1fr) clamp(280px, 28vw, 360px)',
+      gap: 12,
+      minHeight: 0,
+      flex: 1,
+    },
+    editorPane: {
+      minWidth: 0,
+      minHeight: 0,
+      display: 'flex',
+      flexDirection: 'column' as const,
+      gap: 10,
+      background: 'rgba(7,10,18,0.86)',
+      border: '1px solid rgba(30,40,58,0.8)',
+      borderRadius: 14,
+      padding: 12,
+    },
+    sidePane: {
+      minHeight: 0,
+      overflowY: 'auto' as const,
+      display: 'flex',
+      flexDirection: 'column' as const,
+      gap: 12,
+      background: 'rgba(7,10,18,0.9)',
+      border: '1px solid rgba(30,40,58,0.8)',
+      borderRadius: 14,
+      padding: 12,
     },
     tabs: { display: 'flex', gap: 6, background: 'var(--bg,#080a0e)', borderRadius: 8, padding: 4 },
     tab: (active: boolean): React.CSSProperties => ({
@@ -720,7 +773,7 @@ export default function CropModal({ image, title, onConfirm, onClose }: CropModa
   }
 
   return (
-    <div style={s.overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div style={s.overlay}>
       <div style={s.modal}>
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -729,64 +782,68 @@ export default function CropModal({ image, title, onConfirm, onClose }: CropModa
           </span>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text2,#8b8fa8)', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>✕</button>
         </div>
+        <div style={{ ...s.workspace, gridTemplateColumns: isCompactLayout ? '1fr' : 'minmax(0,1fr) clamp(280px, 28vw, 360px)' }}>
+          <section style={s.editorPane}>
+            {/* Mode Tabs */}
+            <div style={s.tabs}>
+              <button style={s.tab(mode === 'crop')} onClick={() => setMode('crop')}>✂ Crop</button>
+              <button style={s.tab(mode === 'scan')} onClick={() => setMode('scan')}>📄 Doc Scanner</button>
+            </div>
 
-        {/* Mode Tabs */}
-        <div style={s.tabs}>
-          <button style={s.tab(mode === 'crop')} onClick={() => setMode('crop')}>✂ Crop</button>
-          <button style={s.tab(mode === 'scan')} onClick={() => setMode('scan')}>📄 Doc Scanner</button>
-        </div>
+            {/* Canvas with zoom + XY scroll */}
+            <div style={{ background: '#030405', borderRadius: 10, border: '0.5px solid var(--border,#1e2029)', padding: 8, minHeight: 0, flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <div
+                ref={canvasViewportRef}
+                style={{
+                  overflow: 'auto',
+                  borderRadius: 8,
+                  border: '0.5px solid var(--border,#1e2029)',
+                  background: '#020305',
+                  flex: 1,
+                  minHeight: 0,
+                }}
+              >
+                <canvas
+                  ref={canvasRef}
+                  style={{
+                    display: 'block',
+                    cursor: mode === 'scan' ? 'default' : 'crosshair',
+                    touchAction: 'none'
+                  }}
+                  onMouseDown={onDown}
+                  onTouchStart={(e) => { e.preventDefault(); onDown(e) }}
+                />
+              </div>
 
-        {/* Canvas with zoom + XY scroll */}
-        <div style={{ background: '#030405', borderRadius: 10, border: '0.5px solid var(--border,#1e2029)', padding: 8 }}>
-          <div
-            ref={canvasViewportRef}
-            style={{
-              overflow: 'auto',
-              maxHeight: '52vh',
-              borderRadius: 8,
-              border: '0.5px solid var(--border,#1e2029)',
-              background: '#020305',
-            }}
-          >
-            <canvas
-              ref={canvasRef}
-              style={{
-                display: 'block',
-                width: `${Math.max(1, Math.round((canvasRef.current?.width ?? 0)))}px`,
-                height: `${Math.max(1, Math.round((canvasRef.current?.height ?? 0)))}px`,
-                cursor: mode === 'scan' ? 'default' : 'crosshair',
-                touchAction: 'none'
-              }}
-              onMouseDown={onDown}
-              onTouchStart={(e) => { e.preventDefault(); onDown(e) }}
-            />
-          </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 10, fontFamily: 'var(--font-mono,monospace)', color: 'var(--text2,#8b8fa8)', width: 68 }}>Zoom {Math.round(zoom * 100)}%</span>
+                <button className="btn-outline" onClick={() => zoomBy(-0.1)} style={{ padding: '4px 8px' }}>−</button>
+                <input
+                  type="range"
+                  min={50}
+                  max={300}
+                  step={5}
+                  value={Math.round(zoom * 100)}
+                  style={{ flex: 1, accentColor: 'var(--green,#00e5a0)' }}
+                  onChange={(e) => setZoom(Math.max(0.5, Math.min(3, +e.target.value / 100)))}
+                />
+                <button className="btn-outline" onClick={() => zoomBy(0.1)} style={{ padding: '4px 8px' }}>+</button>
+              </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 10, fontFamily: 'var(--font-mono,monospace)', color: 'var(--text2,#8b8fa8)', width: 68 }}>Zoom {Math.round(zoom * 100)}%</span>
-            <button className="btn-outline" onClick={() => zoomBy(-0.1)} style={{ padding: '4px 8px' }}>−</button>
-            <input
-              type="range"
-              min={50}
-              max={300}
-              step={5}
-              value={Math.round(zoom * 100)}
-              style={{ flex: 1, accentColor: 'var(--green,#00e5a0)' }}
-              onChange={(e) => setZoom(Math.max(0.5, Math.min(3, +e.target.value / 100)))}
-            />
-            <button className="btn-outline" onClick={() => zoomBy(0.1)} style={{ padding: '4px 8px' }}>+</button>
-          </div>
+              <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                <button className="btn-outline" onClick={() => panViewport(-120, 0)} style={{ padding: '4px 8px' }}>← X</button>
+                <button className="btn-outline" onClick={() => panViewport(120, 0)} style={{ padding: '4px 8px' }}>X →</button>
+                <button className="btn-outline" onClick={() => panViewport(0, -120)} style={{ padding: '4px 8px' }}>↑ Y</button>
+                <button className="btn-outline" onClick={() => panViewport(0, 120)} style={{ padding: '4px 8px' }}>Y ↓</button>
+                <button className="btn-outline" onClick={() => setRotation(p => (p + 90) % 360)} style={{ marginLeft: 'auto', padding: '4px 10px' }}>↻ Rotate</button>
+                <button className="btn-outline" onClick={autoDetect} style={{ padding: '4px 10px' }}>⊡ Smart Detect</button>
+              </div>
+            </div>
+          </section>
 
-          <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-            <button className="btn-outline" onClick={() => panViewport(-120, 0)} style={{ padding: '4px 8px' }}>← X</button>
-            <button className="btn-outline" onClick={() => panViewport(120, 0)} style={{ padding: '4px 8px' }}>X →</button>
-            <button className="btn-outline" onClick={() => panViewport(0, -120)} style={{ padding: '4px 8px' }}>↑ Y</button>
-            <button className="btn-outline" onClick={() => panViewport(0, 120)} style={{ padding: '4px 8px' }}>Y ↓</button>
-          </div>
-        </div>
-
-        {/* Filters */}
-        <div>
+          <aside style={s.sidePane}>
+            {/* Filters */}
+            <div>
           <div style={{ fontSize: 10, fontFamily: 'var(--font-mono,monospace)', color: 'var(--text2,#8b8fa8)', marginBottom: 6 }}>FILTER</div>
           <div style={s.filterRow}>
             {FILTERS.map(f => (
@@ -796,71 +853,70 @@ export default function CropModal({ image, title, onConfirm, onClose }: CropModa
               </button>
             ))}
           </div>
-        </div>
+            </div>
 
-        {/* Sliders */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={s.sliderRow}>
-            <span style={s.sliderLabel}>Brightness {brightness > 0 ? `+${brightness}` : brightness}</span>
-            <input type="range" min={-80} max={80} value={brightness} style={s.slider}
-              onChange={e => setBrightness(+e.target.value)} />
-          </div>
-          <div style={s.sliderRow}>
-            <span style={s.sliderLabel}>Contrast {contrast > 0 ? `+${contrast}` : contrast}</span>
-            <input type="range" min={-80} max={80} value={contrast} style={s.slider}
-              onChange={e => setContrast(+e.target.value)} />
-          </div>
-        </div>
+            {/* Sliders */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={s.sliderRow}>
+                <span style={s.sliderLabel}>Brightness {brightness > 0 ? `+${brightness}` : brightness}</span>
+                <input type="range" min={-80} max={80} value={brightness} style={s.slider}
+                  onChange={e => setBrightness(+e.target.value)} />
+              </div>
+              <div style={s.sliderRow}>
+                <span style={s.sliderLabel}>Contrast {contrast > 0 ? `+${contrast}` : contrast}</span>
+                <input type="range" min={-80} max={80} value={contrast} style={s.slider}
+                  onChange={e => setContrast(+e.target.value)} />
+              </div>
+            </div>
 
-        {/* Crop-mode options */}
-        {mode === 'crop' && (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-            <span style={{ fontSize: 10, fontFamily: 'var(--font-mono,monospace)', color: 'var(--text2,#8b8fa8)' }}>RATIO:</span>
-            {(['free','cnic','a4','square'] as const).map(r => (
-              <button key={r} onClick={() => setAspectLock(r)} style={{
-                padding: '4px 10px', borderRadius: 6, border: `1px solid ${aspectLock === r ? 'var(--green,#00e5a0)' : 'var(--border,#23262e)'}`,
-                background: aspectLock === r ? 'rgba(0,229,160,0.1)' : 'transparent',
-                color: aspectLock === r ? 'var(--green,#00e5a0)' : 'var(--text2,#8b8fa8)',
-                fontSize: 10, fontFamily: 'var(--font-mono,monospace)', cursor: 'pointer', fontWeight: 600,
-              }}>
-                {r === 'free' ? 'Free' : r === 'cnic' ? 'CNIC' : r === 'a4' ? 'A4' : '1:1'}
+            {/* Crop-mode options */}
+            {mode === 'crop' && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: 10, fontFamily: 'var(--font-mono,monospace)', color: 'var(--text2,#8b8fa8)' }}>RATIO:</span>
+                {(['free','cnic','a4','square'] as const).map(r => (
+                  <button key={r} onClick={() => setAspectLock(r)} style={{
+                    padding: '4px 10px', borderRadius: 6, border: `1px solid ${aspectLock === r ? 'var(--green,#00e5a0)' : 'var(--border,#23262e)'}`,
+                    background: aspectLock === r ? 'rgba(0,229,160,0.1)' : 'transparent',
+                    color: aspectLock === r ? 'var(--green,#00e5a0)' : 'var(--text2,#8b8fa8)',
+                    fontSize: 10, fontFamily: 'var(--font-mono,monospace)', cursor: 'pointer', fontWeight: 600,
+                  }}>
+                    {r === 'free' ? 'Free' : r === 'cnic' ? 'CNIC' : r === 'a4' ? 'A4' : '1:1'}
+                  </button>
+                ))}
+                <button onClick={() => setShowGrid(p => !p)} style={{
+                  marginLeft: 'auto', padding: '4px 10px', borderRadius: 6,
+                  border: `1px solid ${showGrid ? 'var(--green,#00e5a0)' : 'var(--border,#23262e)'}`,
+                  background: showGrid ? 'rgba(0,229,160,0.1)' : 'transparent',
+                  color: showGrid ? 'var(--green,#00e5a0)' : 'var(--text2,#8b8fa8)',
+                  fontSize: 10, fontFamily: 'var(--font-mono,monospace)', cursor: 'pointer', fontWeight: 600,
+                }}>⊞ Grid</button>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 'auto' }}>
+              <button className="btn-outline" onClick={() => {
+                setCropStart(null); setCropEnd(null)
+                setBrightness(0); setContrast(0)
+                setFilter('original')
+                setZoom(1)
+                setDisplayScale(fitScale)
+                const canvas = canvasRef.current!
+                const pad = canvas.width * 0.1
+                setCorners([
+                  { x: pad, y: pad }, { x: canvas.width-pad, y: pad },
+                  { x: canvas.width-pad, y: canvas.height-pad }, { x: pad, y: canvas.height-pad },
+                ])
+              }}>↺ Reset</button>
+              <button className="btn-green" style={{ flex: 1, minWidth: 120 }} onClick={confirmCrop}>
+                {mode === 'scan' ? '📄 Scan & Apply' : '✓ Apply Crop'}
               </button>
-            ))}
-            <button onClick={() => setShowGrid(p => !p)} style={{
-              marginLeft: 'auto', padding: '4px 10px', borderRadius: 6,
-              border: `1px solid ${showGrid ? 'var(--green,#00e5a0)' : 'var(--border,#23262e)'}`,
-              background: showGrid ? 'rgba(0,229,160,0.1)' : 'transparent',
-              color: showGrid ? 'var(--green,#00e5a0)' : 'var(--text2,#8b8fa8)',
-              fontSize: 10, fontFamily: 'var(--font-mono,monospace)', cursor: 'pointer', fontWeight: 600,
-            }}>⊞ Grid</button>
+              <button className="btn-outline" style={{ border: 'none', color: 'var(--text2,#8b8fa8)', width: '100%' }} onClick={onClose}>
+                Cancel
+              </button>
+            </div>
+          </aside>
           </div>
-        )}
-
-        {/* Action Buttons */}
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button className="btn-outline" onClick={() => setRotation(p => (p + 90) % 360)}>↻ Rotate</button>
-          <button className="btn-outline" onClick={autoDetect}>⊡ Smart Detect</button>
-          <button className="btn-outline" onClick={() => {
-            setCropStart(null); setCropEnd(null)
-            setBrightness(0); setContrast(0)
-            setFilter('original')
-            setZoom(1)
-            setDisplayScale(fitScale)
-            const canvas = canvasRef.current!
-            const pad = canvas.width * 0.1
-            setCorners([
-              { x: pad, y: pad }, { x: canvas.width-pad, y: pad },
-              { x: canvas.width-pad, y: canvas.height-pad }, { x: pad, y: canvas.height-pad },
-            ])
-          }}>↺ Reset</button>
-          <button className="btn-green" style={{ flex: 1, minWidth: 120 }} onClick={confirmCrop}>
-            {mode === 'scan' ? '📄 Scan & Apply' : '✓ Apply Crop'}
-          </button>
-        </div>
-
-        <button className="btn-outline" style={{ border: 'none', color: 'var(--text2,#8b8fa8)', width: '100%' }} onClick={onClose}>
-          Cancel
-        </button>
       </div>
     </div>
   )
