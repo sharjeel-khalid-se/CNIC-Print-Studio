@@ -162,7 +162,7 @@ export default function Home() {
   const readyToPrint = frontImg && backImg
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
+    <div className="app-shell">
       <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFile} />
 
       {cropTarget && (
@@ -175,17 +175,9 @@ export default function Home() {
       )}
 
       {/* Header */}
-      <header style={{
-        borderBottom: '0.5px solid var(--border)',
-        padding: isMobile ? '12px 14px' : '14px 24px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        background: 'var(--bg2)',
-      }}>
+      <header className="topbar" style={{ padding: isMobile ? '12px 14px' : '14px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{
-            width: 32, height: 32, borderRadius: 8,
-            background: 'var(--green)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
+          <div className="brand-mark">
             <svg width={18} height={14} viewBox="0 0 18 14" fill="none">
               <rect x={0.5} y={0.5} width={17} height={13} rx={2} stroke="#000" strokeWidth={1.5} />
               <circle cx={5.5} cy={5} r={2} fill="#000" opacity={0.5} />
@@ -193,35 +185,63 @@ export default function Home() {
             </svg>
           </div>
           <div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>
+            <div className="brand-title">
               CNIC Print Studio
             </div>
-            <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 1 }}>
+            <div className="brand-subtitle">
               Duplex-ready layout generator
             </div>
           </div>
         </div>
-        <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
+        <div className="topbar-badge">
           85.6 × 54 mm
         </div>
       </header>
 
-      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 0, minHeight: 'calc(100vh - 61px)' }}>
+      <section className="hero-panel">
+        <div>
+          <div className="hero-kicker">CNIC PRINT WORKSPACE</div>
+          <h1 className="hero-title">Professional CNIC printing, designed for precision.</h1>
+          <p className="hero-copy">
+            Upload both sides, crop with confidence, and export a duplex-ready PDF built around the exact 85.6 × 54 mm CNIC size.
+            The layout stays clean, readable, and print-safe across A4, A5, and A6.
+          </p>
+        </div>
+        <div className="hero-stats">
+          <div className="stat-card">
+            <span className="stat-label">Accuracy</span>
+            <div className="stat-value">Exact CNIC ratio</div>
+          </div>
+          <div className="stat-card">
+            <span className="stat-label">Output</span>
+            <div className="stat-value">Duplex-ready PDF</div>
+          </div>
+          <div className="stat-card">
+            <span className="stat-label">Formats</span>
+            <div className="stat-value">A4, A5, A6</div>
+          </div>
+          <div className="stat-card">
+            <span className="stat-label">Workflow</span>
+            <div className="stat-value">Upload → Crop → Print</div>
+          </div>
+        </div>
+      </section>
+
+      <div className="workspace-shell">
 
         {/* Left sidebar */}
-        <aside style={{
+        <aside className="sidebar-panel" style={{
           width: isMobile ? '100%' : 240,
           flexShrink: 0,
-          background: 'var(--bg2)',
-          borderRight: isMobile ? 'none' : '0.5px solid var(--border)',
+          borderRight: isMobile ? 'none' : undefined,
           borderBottom: isMobile ? '0.5px solid var(--border)' : 'none',
-          padding: isMobile ? '14px' : '20px 16px',
-          display: 'flex', flexDirection: 'column', gap: 20,
+          padding: isMobile ? '14px' : undefined,
+          display: 'flex', flexDirection: 'column', gap: 12,
         }}>
 
           {/* Page size */}
-          <div>
-            <Label>Page Size</Label>
+          <div className="section-card">
+            <div className="section-kicker">Page Size</div>
             <div style={{ display: 'flex', gap: 6 }}>
               {(['A4', 'A5', 'A6'] as PageSize[]).map(p => (
                 <button
@@ -233,14 +253,14 @@ export default function Home() {
                 </button>
               ))}
             </div>
-            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, fontFamily: 'var(--font-mono)' }}>
+            <div className="section-note">
               {perSide} copies per side • {perSide} total slots
             </div>
           </div>
 
           {/* Upload */}
-          <div>
-            <Label>CNIC Images</Label>
+          <div className="section-card">
+            <div className="section-kicker">CNIC Images</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <UploadButton
                 label="Front Side"
@@ -258,8 +278,8 @@ export default function Home() {
           </div>
 
           {/* Quantity */}
-          <div>
-            <Label>Quantity (copies)</Label>
+          <div className="section-card">
+            <div className="section-kicker">Quantity (copies)</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6 }}>
               {Array.from({ length: Math.max(layout.perSide, 3) }, (_, i) => i + 1).map(n => {
                 const available = n <= layout.perSide
@@ -287,12 +307,7 @@ export default function Home() {
           </div>
 
           {/* Status */}
-          <div style={{
-            background: 'var(--bg3)', borderRadius: 8,
-            border: '0.5px solid var(--border)',
-            padding: '10px 12px', fontSize: 12, color: 'var(--text2)',
-            lineHeight: 1.6,
-          }}>
+          <div className="status-card" style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
             {!frontImg && <div>↑ Upload front image</div>}
             {!backImg && <div>↑ Upload back image</div>}
             {readyToPrint && (
@@ -324,35 +339,23 @@ export default function Home() {
         </aside>
 
         {/* Main preview area */}
-        <main style={{
+        <main className="workspace-panel" style={{
           flex: 1,
           padding: isMobile ? '14px' : '24px',
           overflow: 'auto',
-          background: 'var(--bg3)',
         }}>
-          <div style={{
-            display: 'flex', gap: 12, alignItems: 'center', marginBottom: 20,
-          }}>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text2)' }}>
+          <div className="preview-header">
+            <span className="preview-kicker">
               PRINT PREVIEW
             </span>
             <div style={{ height: 1, flex: 1, background: 'var(--border)' }} />
-            <span style={{
-              fontFamily: 'var(--font-mono)', fontSize: isMobile ? 10 : 11, color: 'var(--text3)',
-              padding: '3px 8px', border: '0.5px solid var(--border)', borderRadius: 4,
-            }}>
+            <span className="preview-chip">
               {pageSize} · {quantity}/{perSide} slots
             </span>
           </div>
 
           {/* Two page previews side by side */}
-          <div style={{
-            display: 'flex',
-            gap: isMobile ? 18 : 40,
-            alignItems: 'flex-start',
-            justifyContent: 'center',
-            flexWrap: 'wrap',
-          }}>
+          <div className="preview-grid">
             <PagePreview
               pageSize={pageSize}
               slots={buildSlots('front')}
@@ -376,16 +379,7 @@ export default function Home() {
           </div>
 
           {/* Duplex tip */}
-          <div style={{
-            marginTop: 28,
-            background: 'var(--bg2)',
-            border: '0.5px solid var(--border)',
-            borderRadius: 8,
-            padding: '12px 16px',
-            display: 'flex', gap: 12, alignItems: 'flex-start',
-            maxWidth: 620, marginLeft: 'auto', marginRight: 'auto',
-            width: '100%',
-          }}>
+          <div className="helper-panel" style={{ display: 'flex', gap: 12, alignItems: 'flex-start', maxWidth: 620, marginLeft: 'auto', marginRight: 'auto', width: '100%' }}>
             <span style={{ fontSize: 18, flexShrink: 0 }}>💡</span>
             <div>
               <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', marginBottom: 4 }}>

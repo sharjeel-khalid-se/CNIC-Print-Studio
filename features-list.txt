@@ -1,0 +1,50 @@
+Smart Auto Crop (AI edge detect)
+CNIC ke corners auto detect kare
+Tilt correction aur perspective fix khud kare
+Manual fine-tune option bhi rahe
+
+Background Cleanup Pro
+Shadow removal
+Glare reduction
+Text sharpen mode
+One-click “Print Ready” preset
+
+Exact Print Calibration
+Printer calibration sheet generate kare
+1-time calibration ke baad size mismatch issue khatam
+Safe bleed and cut marks add kare
+
+Batch Upload + Batch Processing
+Multiple front/back pairs ek sath upload
+Auto pair by filename
+Ek click me sab ka PDF export
+
+Live Duplex Simulator
+Front/back overlay preview
+Flip-on-long-edge aur short-edge preview
+Misalignment warning
+
+Save Projects
+Draft save/load
+Recent projects list
+Re-edit without re-upload
+
+Export Upgrades
+High quality PDF + PNG sheets
+CMYK-friendly export option
+Optional watermark/logo
+
+QR + Metadata
+CNIC copy par internal tracking QR
+Date/time stamp
+Office ID or operator name
+
+Security Features
+Auto blur for sensitive fields (optional)
+Local-only processing mode
+“Do not store images” privacy toggle
+
+Mobile-Friendly Scan Flow
+Camera capture with guide frame
+Auto straighten
+Instant crop + print layout

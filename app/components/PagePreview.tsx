@@ -65,11 +65,14 @@ export default function PagePreview({ pageSize, slots, cols, rows, label, type, 
   const startY = Math.round((pxH - gridH) / 2)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
       <span style={{
         fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600,
         color: type === 'front' ? 'var(--green)' : '#f09050',
-        letterSpacing: 1, textTransform: 'uppercase'
+        letterSpacing: 1, textTransform: 'uppercase',
+        padding: '5px 10px', borderRadius: 999,
+        border: `1px solid ${type === 'front' ? 'rgba(0,200,150,0.2)' : 'rgba(240,144,80,0.2)'}`,
+        background: 'rgba(255,255,255,0.03)'
       }}>
         {label}
       </span>
@@ -79,9 +82,10 @@ export default function PagePreview({ pageSize, slots, cols, rows, label, type, 
         position: 'relative',
         width: pxW,
         height: pxH,
-        background: '#fff',
-        borderRadius: 3,
-        boxShadow: '0 4px 24px rgba(0,0,0,0.5), 0 1px 4px rgba(0,0,0,0.3)',
+        background: 'linear-gradient(180deg, #ffffff 0%, #fafafa 100%)',
+        borderRadius: 14,
+        boxShadow: '0 18px 46px rgba(0,0,0,0.38), 0 2px 10px rgba(0,0,0,0.18)',
+        border: '1px solid rgba(255,255,255,0.28)',
         overflow: 'hidden',
         flexShrink: 0,
       }}>
@@ -99,6 +103,8 @@ export default function PagePreview({ pageSize, slots, cols, rows, label, type, 
           {/* Page border */}
           <rect x={0.5} y={0.5} width={pxW - 1} height={pxH - 1}
             fill="none" stroke="#ccc" strokeWidth={1} />
+          <rect x={4} y={4} width={pxW - 8} height={pxH - 8} rx={10}
+            fill="none" stroke="rgba(0,0,0,0.03)" strokeWidth={1} />
           {/* Page size label */}
           <text x={pxW - 6} y={pxH - 5} fontSize={8}
             fill="#bbb" textAnchor="end" fontFamily="IBM Plex Mono, monospace">
