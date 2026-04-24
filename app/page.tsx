@@ -2,18 +2,17 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
 import CropModal from './components/CropModal'
 import PagePreview from './components/PagePreview'
+import CameraCaptureModal from './components/CameraCaptureModal'
 
 type PageSize = 'A4' | 'A5' | 'A6'
+type Side = 'front' | 'back'
 
-// Exact layouts matching your provided screenshots:
-// A5 uses a 2x2 grid which requires the CNIC cards to be rotated to fit.
 const LAYOUTS: Record<PageSize, { cols: number; rows: number; perSide: number; rotated: boolean }> = {
-  A4: { cols: 2, rows: 4, perSide: 8, rotated: false }, // 8 per side (Horizontal)
-  A5: { cols: 2, rows: 2, perSide: 4, rotated: true },  // 4 per side (Portrait / Rotated)
-  A6: { cols: 1, rows: 2, perSide: 2, rotated: false }, // 2 per side (Horizontal)
+  A4: { cols: 2, rows: 4, perSide: 8, rotated: false },
+  A5: { cols: 2, rows: 2, perSide: 4, rotated: true },
+  A6: { cols: 1, rows: 2, perSide: 2, rotated: false },
 }
 
-// For PDF: actual mm dimensions of CNIC
 const CNIC_MM = { w: 85.6, h: 54 }
 const MARGIN_MM = 8
 
@@ -23,29 +22,52 @@ const PAGE_MM: Record<PageSize, { w: number; h: number }> = {
   A6: { w: 105, h: 148 },
 }
 
+interface CropTarget {
+  img: HTMLImageElement
+  side: Side
+  initialMode?: 'crop' | 'scan'
+  autoDetectOnOpen?: boolean
+}
+
 export default function Home() {
   const [isMobile, setIsMobile] = useState(false)
   const [pageSize, setPageSize] = useState<PageSize>('A4')
   const [frontImg, setFrontImg] = useState<string | null>(null)
   const [backImg, setBackImg] = useState<string | null>(null)
+  const [frontRaw, setFrontRaw] = useState<string | null>(null)
+  const [backRaw, setBackRaw] = useState<string | null>(null)
   const [quantity, setQuantity] = useState(1)
-  const [cropTarget, setCropTarget] = useState<{ img: HTMLImageElement; side: 'front' | 'back' } | null>(null)
+  const [cropTarget, setCropTarget] = useState<CropTarget | null>(null)
+  const [cameraSide, setCameraSide] = useState<Side | null>(null)
   const [pdfLoading, setPdfLoading] = useState(false)
-  
+
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const currentSide = useRef<'front' | 'back'>('front')
+  const currentSide = useRef<Side>('front')
 
   const layout = LAYOUTS[pageSize]
-  const perSide = layout.perSide // Exact slots per page based on layout
+  const perSide = layout.perSide
 
   useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth < 900)
+    const onResize = () => setIsMobile(window.innerWidth < 940)
     onResize()
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
-  const triggerUpload = (side: 'front' | 'back') => {
+  const openCropFromData = (dataUrl: string, side: Side, options?: { scanMode?: boolean }) => {
+    const img = new Image()
+    img.onload = () => {
+      setCropTarget({
+        img,
+        side,
+        initialMode: options?.scanMode ? 'scan' : 'crop',
+        autoDetectOnOpen: !!options?.scanMode,
+      })
+    }
+    img.src = dataUrl
+  }
+
+  const triggerUpload = (side: Side) => {
     currentSide.current = side
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
@@ -53,14 +75,34 @@ export default function Home() {
     }
   }
 
+  const startCameraFlow = (side: Side) => {
+    setCameraSide(side)
+  }
+
+  const reEdit = (side: Side) => {
+    const src = side === 'front' ? frontRaw : backRaw
+    if (!src) return
+    openCropFromData(src, side)
+  }
+
+  const onCameraCapture = (dataUrl: string) => {
+    if (!cameraSide) return
+    if (cameraSide === 'front') setFrontRaw(dataUrl)
+    else setBackRaw(dataUrl)
+    openCropFromData(dataUrl, cameraSide, { scanMode: true })
+    setCameraSide(null)
+  }
+
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    const side = currentSide.current
     const reader = new FileReader()
     reader.onload = (ev) => {
-      const img = new Image()
-      img.onload = () => setCropTarget({ img, side: currentSide.current })
-      img.src = ev.target?.result as string
+      const dataUrl = ev.target?.result as string
+      if (side === 'front') setFrontRaw(dataUrl)
+      else setBackRaw(dataUrl)
+      openCropFromData(dataUrl, side)
     }
     reader.readAsDataURL(file)
   }
@@ -71,7 +113,7 @@ export default function Home() {
     setCropTarget(null)
   }
 
-  const buildSlots = (type: 'front' | 'back') => {
+  const buildSlots = (type: Side) => {
     const img = type === 'front' ? frontImg : backImg
     return Array.from({ length: perSide }, (_, i) => ({
       image: img,
@@ -84,20 +126,17 @@ export default function Home() {
   const downloadPDF = useCallback(async () => {
     if (!frontImg || !backImg) return
     setPdfLoading(true)
-    
+
     try {
       const { jsPDF } = await import('jspdf')
       const page = PAGE_MM[pageSize]
-      const layout = LAYOUTS[pageSize]
       const cols = layout.cols
+      const rows = layout.rows
       const rotated = layout.rotated
-
-      // Determine dimensions taking rotation into account
       const cnicW = rotated ? CNIC_MM.h : CNIC_MM.w
       const cnicH = rotated ? CNIC_MM.w : CNIC_MM.h
 
       const gapX = cols > 1 ? (page.w - MARGIN_MM * 2 - cnicW * cols) / (cols - 1) : 0
-      const rows = layout.rows
       const gapY = rows > 1 ? (page.h - MARGIN_MM * 2 - cnicH * rows) / (rows - 1) : 0
 
       const usedW = cnicW * cols + gapX * (cols - 1)
@@ -107,7 +146,6 @@ export default function Home() {
 
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: pageSize.toLowerCase() as any })
 
-      // Helper function: If we need a rotated image for the PDF, generate it via offscreen canvas
       const getFinalImgBase64 = async (src: string): Promise<string> => {
         if (!rotated) return src
         return new Promise<string>((resolve) => {
@@ -129,7 +167,6 @@ export default function Home() {
       const printFrontImg = await getFinalImgBase64(frontImg)
       const printBackImg = await getFinalImgBase64(backImg)
 
-      // Page 1: fronts
       for (let i = 0; i < layout.perSide; i++) {
         if (i >= quantity) break
         const col = i % cols
@@ -139,13 +176,11 @@ export default function Home() {
         pdf.addImage(printFrontImg, 'JPEG', x, y, cnicW, cnicH)
       }
 
-      // Page 2: backs
       pdf.addPage()
       for (let i = 0; i < layout.perSide; i++) {
         if (i >= quantity) break
         const col = i % cols
         const row = Math.floor(i / cols)
-        // Duplex alignment logic (Mirror X axis so back perfectly matches front when flipped horizontally)
         const mirrorCol = (cols - 1) - col
         const x = startX + mirrorCol * (cnicW + gapX)
         const y = startY + row * (cnicH + gapY)
@@ -156,147 +191,116 @@ export default function Home() {
     } catch (err) {
       console.error(err)
     }
-    setPdfLoading(false)
-  }, [frontImg, backImg, pageSize, quantity])
 
-  const readyToPrint = frontImg && backImg
+    setPdfLoading(false)
+  }, [frontImg, backImg, pageSize, quantity, layout])
+
+  const readyToPrint = !!frontImg && !!backImg
 
   return (
     <div className="app-shell">
       <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFile} />
 
+      {cameraSide && (
+        <CameraCaptureModal
+          side={cameraSide}
+          onCapture={onCameraCapture}
+          onClose={() => setCameraSide(null)}
+        />
+      )}
+
       {cropTarget && (
         <CropModal
           image={cropTarget.img}
-          title={`Crop CNIC — ${cropTarget.side === 'front' ? 'Front' : 'Back'}`}
+          title={`CNIC Editor - ${cropTarget.side === 'front' ? 'Front' : 'Back'}`}
+          initialMode={cropTarget.initialMode}
+          autoDetectOnOpen={cropTarget.autoDetectOnOpen}
           onConfirm={handleCropConfirm}
           onClose={() => setCropTarget(null)}
         />
       )}
 
-      {/* Header */}
       <header className="topbar" style={{ padding: isMobile ? '12px 14px' : '14px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div className="brand-mark">
-            <svg width={18} height={14} viewBox="0 0 18 14" fill="none">
-              <rect x={0.5} y={0.5} width={17} height={13} rx={2} stroke="#000" strokeWidth={1.5} />
-              <circle cx={5.5} cy={5} r={2} fill="#000" opacity={0.5} />
-              <path d="M1 11 L5 8 L9 10 L13 7 L17 9" stroke="#000" strokeWidth={1.2} />
-            </svg>
-          </div>
+          <div className="brand-mark">🪪</div>
           <div>
-            <div className="brand-title">
-              CNIC Print Studio
-            </div>
-            <div className="brand-subtitle">
-              Duplex-ready layout generator
-            </div>
+            <div className="brand-title">CNIC Print Studio Pro</div>
+            <div className="brand-subtitle">Canva-style editing and duplex-ready output</div>
           </div>
         </div>
-        <div className="topbar-badge">
-          85.6 × 54 mm
-        </div>
+        <div className="topbar-badge">85.6 x 54 mm</div>
       </header>
 
-      <section className="hero-panel">
+      <section className="hero-panel" style={{ alignItems: 'center' }}>
         <div>
-          <div className="hero-kicker">CNIC PRINT WORKSPACE</div>
-          <h1 className="hero-title">Professional CNIC printing, designed for precision.</h1>
+          <div className="hero-kicker">EDITOR WORKSPACE</div>
+          <h1 className="hero-title">Scan, Re-edit, and Print without friction.</h1>
           <p className="hero-copy">
-            Upload both sides, crop with confidence, and export a duplex-ready PDF built around the exact 85.6 × 54 mm CNIC size.
-            The layout stays clean, readable, and print-safe across A4, A5, and A6.
+            Upload ya camera se capture karo, auto-straighten ke sath edit karo, aur bina re-upload ke kisi bhi side ko dubara edit karo.
+            Final layout instant preview me update hota hai.
           </p>
         </div>
         <div className="hero-stats">
-          <div className="stat-card">
-            <span className="stat-label">Accuracy</span>
-            <div className="stat-value">Exact CNIC ratio</div>
-          </div>
-          <div className="stat-card">
-            <span className="stat-label">Output</span>
-            <div className="stat-value">Duplex-ready PDF</div>
-          </div>
-          <div className="stat-card">
-            <span className="stat-label">Formats</span>
-            <div className="stat-value">A4, A5, A6</div>
-          </div>
-          <div className="stat-card">
-            <span className="stat-label">Workflow</span>
-            <div className="stat-value">Upload → Crop → Print</div>
-          </div>
+          <div className="stat-card"><span className="stat-label">Re-edit</span><div className="stat-value">No re-upload needed</div></div>
+          <div className="stat-card"><span className="stat-label">Mobile Scan</span><div className="stat-value">Guide frame camera</div></div>
+          <div className="stat-card"><span className="stat-label">Auto</span><div className="stat-value">Straighten on capture</div></div>
+          <div className="stat-card"><span className="stat-label">Output</span><div className="stat-value">Instant print layout</div></div>
         </div>
       </section>
 
       <div className="workspace-shell">
-
-        {/* Left sidebar */}
-        <aside className="sidebar-panel" style={{
-          width: isMobile ? '100%' : 240,
-          flexShrink: 0,
-          borderRight: isMobile ? 'none' : undefined,
-          borderBottom: isMobile ? '0.5px solid var(--border)' : 'none',
-          padding: isMobile ? '14px' : undefined,
-          display: 'flex', flexDirection: 'column', gap: 12,
-        }}>
-
-          {/* Page size */}
+        <aside className="sidebar-panel" style={{ width: isMobile ? '100%' : 330 }}>
           <div className="section-card">
             <div className="section-kicker">Page Size</div>
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
               {(['A4', 'A5', 'A6'] as PageSize[]).map(p => (
-                <button
-                  key={p} className={`btn-outline${pageSize === p ? ' active' : ''}`}
-                  onClick={() => { setPageSize(p); setQuantity(1) }}
-                  style={{ flex: 1, padding: '7px 0' }}
-                >
+                <button key={p} className={`btn-outline${pageSize === p ? ' active' : ''}`} onClick={() => { setPageSize(p); setQuantity(1) }} style={{ flex: 1, padding: '8px 0' }}>
                   {p}
                 </button>
               ))}
             </div>
-            <div className="section-note">
-              {perSide} copies per side • {perSide} total slots
-            </div>
+            <div className="section-note">{perSide} copies per side</div>
           </div>
 
-          {/* Upload */}
           <div className="section-card">
-            <div className="section-kicker">CNIC Images</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <UploadButton
-                label="Front Side"
-                done={!!frontImg}
-                onClick={() => triggerUpload('front')}
-                color="#00c896"
-              />
-              <UploadButton
-                label="Back Side"
-                done={!!backImg}
-                onClick={() => triggerUpload('back')}
-                color="#f09050"
-              />
+            <div className="section-kicker">Front Side</div>
+            <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+              <button className="btn-outline" onClick={() => triggerUpload('front')} style={{ flex: 1 }}>Upload</button>
+              <button className="btn-outline" onClick={() => startCameraFlow('front')} style={{ flex: 1 }}>Camera</button>
+              <button className="btn-outline" onClick={() => reEdit('front')} disabled={!frontRaw} style={{ width: '100%' }}>Re-edit without re-upload</button>
             </div>
+            <div className="section-note">{frontImg ? 'Edited and ready' : 'Image not set'}</div>
           </div>
 
-          {/* Quantity */}
           <div className="section-card">
-            <div className="section-kicker">Quantity (copies)</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6 }}>
-              {Array.from({ length: Math.max(layout.perSide, 3) }, (_, i) => i + 1).map(n => {
+            <div className="section-kicker">Back Side</div>
+            <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+              <button className="btn-outline" onClick={() => triggerUpload('back')} style={{ flex: 1 }}>Upload</button>
+              <button className="btn-outline" onClick={() => startCameraFlow('back')} style={{ flex: 1 }}>Camera</button>
+              <button className="btn-outline" onClick={() => reEdit('back')} disabled={!backRaw} style={{ width: '100%' }}>Re-edit without re-upload</button>
+            </div>
+            <div className="section-note">{backImg ? 'Edited and ready' : 'Image not set'}</div>
+          </div>
+
+          <div className="section-card">
+            <div className="section-kicker">Quantity</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6, marginTop: 8 }}>
+              {Array.from({ length: Math.max(layout.perSide, 4) }, (_, i) => i + 1).map(n => {
                 const available = n <= layout.perSide
                 return (
                   <button
                     key={n}
                     onClick={() => available && setQuantity(n)}
                     style={{
-                      padding: '9px 0',
-                      borderRadius: 6,
+                      padding: '8px 0',
+                      borderRadius: 7,
                       border: `0.5px solid ${quantity === n ? 'var(--green)' : available ? 'var(--border2)' : 'var(--border)'}`,
                       background: quantity === n ? 'var(--green-dim)' : 'transparent',
                       color: quantity === n ? 'var(--green)' : available ? 'var(--text)' : 'var(--text3)',
-                      fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 600,
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 12,
                       cursor: available ? 'pointer' : 'not-allowed',
-                      opacity: available ? 1 : 0.3,
-                      transition: 'all .12s',
+                      opacity: available ? 1 : 0.35,
                     }}
                   >
                     {n}
@@ -306,62 +310,31 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Status */}
-          <div className="status-card" style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
-            {!frontImg && <div>↑ Upload front image</div>}
-            {!backImg && <div>↑ Upload back image</div>}
-            {readyToPrint && (
-              <div style={{ color: 'var(--green)' }}>
-                ✓ Ready — {quantity} cop{quantity > 1 ? 'ies' : 'y'} on {pageSize}
-              </div>
-            )}
-          </div>
-
-          {!isMobile && <div style={{ flex: 1 }} />}
-
-          {/* PDF Download */}
-          <button
-            className="btn-green"
-            disabled={!readyToPrint || pdfLoading}
-            onClick={downloadPDF}
-            style={{ width: '100%', fontSize: 13, padding: '12px 0' }}
-          >
-            {pdfLoading ? '⏳ Generating...' : '⬇ Download PDF'}
+          <button className="btn-green" disabled={!readyToPrint || pdfLoading} onClick={downloadPDF} style={{ width: '100%', marginTop: 'auto' }}>
+            {pdfLoading ? 'Generating PDF...' : 'Download Duplex PDF'}
           </button>
 
-          {readyToPrint && (
-            <div style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.6, textAlign: 'center' }}>
-              PDF mein 2 pages honge —<br />
-              Page 1: Fronts · Page 2: Backs<br />
-              Duplex print karo = perfect match
-            </div>
-          )}
+          <div className="status-card" style={{ marginTop: 10, fontSize: 12, lineHeight: 1.7, color: 'var(--text2)' }}>
+            {!frontImg && 'Front side set karein'}<br />
+            {!backImg && 'Back side set karein'}
+            {readyToPrint && <span style={{ color: 'var(--green)' }}>Ready: {quantity} copies on {pageSize}</span>}
+          </div>
         </aside>
 
-        {/* Main preview area */}
-        <main className="workspace-panel" style={{
-          flex: 1,
-          padding: isMobile ? '14px' : '24px',
-          overflow: 'auto',
-        }}>
+        <main className="workspace-panel" style={{ flex: 1, minWidth: 0, padding: isMobile ? '14px' : '20px' }}>
           <div className="preview-header">
-            <span className="preview-kicker">
-              PRINT PREVIEW
-            </span>
+            <span className="preview-kicker">LIVE PRINT LAYOUT</span>
             <div style={{ height: 1, flex: 1, background: 'var(--border)' }} />
-            <span className="preview-chip">
-              {pageSize} · {quantity}/{perSide} slots
-            </span>
+            <span className="preview-chip">{pageSize} · {quantity}/{perSide}</span>
           </div>
 
-          {/* Two page previews side by side */}
           <div className="preview-grid">
             <PagePreview
               pageSize={pageSize}
               slots={buildSlots('front')}
               cols={layout.cols}
               rows={layout.rows}
-              label={`Page 1 — Front Side`}
+              label="Page 1 - Front Side"
               type="front"
               rotated={layout.rotated}
               compact={isMobile}
@@ -371,63 +344,21 @@ export default function Home() {
               slots={buildSlots('back')}
               cols={layout.cols}
               rows={layout.rows}
-              label={`Page 2 — Back Side`}
+              label="Page 2 - Back Side"
               type="back"
               rotated={layout.rotated}
               compact={isMobile}
             />
           </div>
 
-          {/* Duplex tip */}
-          <div className="helper-panel" style={{ display: 'flex', gap: 12, alignItems: 'flex-start', maxWidth: 620, marginLeft: 'auto', marginRight: 'auto', width: '100%' }}>
-            <span style={{ fontSize: 18, flexShrink: 0 }}>💡</span>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', marginBottom: 4 }}>
-                Duplex Print Guide
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
-                PDF download karo → printer mein <strong style={{ color: 'var(--text)' }}>two-sided / duplex</strong> select karo →
-                &nbsp;<strong style={{ color: 'var(--text)' }}>flip on long edge (standard)</strong> → print karo.
-                Front aur back automatically align ho jaenge. Phir scissors se cut karo!
-              </div>
+          <div className="helper-panel" style={{ marginTop: 18 }}>
+            <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.7 }}>
+              Workflow: Camera/Upload -> Auto Straighten -> Fine Edit -> Instant Layout -> Duplex Print.
+              Re-edit option se aap kisi bhi time original scan ko dubara khol sakte hain.
             </div>
           </div>
         </main>
       </div>
     </div>
-  )
-}
-
-function Label({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{
-      fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600,
-      color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1,
-      marginBottom: 8,
-    }}>
-      {children}
-    </div>
-  )
-}
-
-function UploadButton({ label, done, onClick, color }: { label: string; done: boolean; onClick: () => void; color: string }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        width: '100%', padding: '10px 14px',
-        borderRadius: 8,
-        border: `0.5px ${done ? 'solid' : 'dashed'} ${done ? color : 'var(--border2)'}`,
-        background: done ? `${color}18` : 'transparent',
-        color: done ? color : 'var(--text2)',
-        fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 500,
-        cursor: 'pointer', textAlign: 'left',
-        transition: 'all .15s',
-        display: 'flex', alignItems: 'center', gap: 8,
-      }}
-    >
-      <span style={{ fontSize: 14 }}>{done ? '✓' : '+'}</span>
-      <span>{done ? `${label} — uploaded` : `Upload ${label}`}</span>
-    </button>
   )
 }

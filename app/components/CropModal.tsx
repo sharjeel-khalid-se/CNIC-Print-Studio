@@ -7,6 +7,8 @@ interface CropModalProps {
   title: string
   onConfirm: (dataURL: string) => void
   onClose: () => void
+  initialMode?: ModeType
+  autoDetectOnOpen?: boolean
 }
 
 const CNIC_RATIO = 85.6 / 54
@@ -23,6 +25,10 @@ const FILTERS: { id: FilterType; label: string; icon: string }[] = [
   { id: 'grayscale',label: 'Gray',     icon: '▦' },
   { id: 'vivid',    label: 'Vivid',    icon: '🌈' },
 ]
+
+function clamp255(v: number): number {
+  return Math.max(0, Math.min(255, v))
+}
 
 // Apply CSS-style filters via canvas pixel manipulation
 function applyFilter(ctx: CanvasRenderingContext2D, w: number, h: number, filter: FilterType) {
@@ -69,6 +75,82 @@ function applyFilter(ctx: CanvasRenderingContext2D, w: number, h: number, filter
       d[i+2] = Math.min(255, Math.max(0, gray + (b - gray) * s))
     }
   }
+  ctx.putImageData(imageData, 0, 0)
+}
+
+function applyBackgroundCleanup(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  shadowRemoval: number,
+  glareReduction: number,
+  textSharpen: number
+) {
+  if (shadowRemoval <= 0 && glareReduction <= 0 && textSharpen <= 0) return
+
+  const imageData = ctx.getImageData(0, 0, w, h)
+  const d = imageData.data
+  const shadowN = shadowRemoval / 100
+  const glareN = glareReduction / 100
+  const sharpN = textSharpen / 100
+
+  for (let i = 0; i < d.length; i += 4) {
+    let r = d[i]
+    let g = d[i + 1]
+    let b = d[i + 2]
+    const luma = 0.299 * r + 0.587 * g + 0.114 * b
+
+    if (shadowN > 0) {
+      const lift = Math.pow(1 - luma / 255, 1.65) * shadowN * 84
+      r += lift
+      g += lift
+      b += lift
+    }
+
+    if (glareN > 0 && luma > 186) {
+      const over = Math.min(1, (luma - 186) / 69)
+      const reduce = over * glareN * 52
+      r -= reduce
+      g -= reduce
+      b -= reduce
+    }
+
+    d[i] = clamp255(r)
+    d[i + 1] = clamp255(g)
+    d[i + 2] = clamp255(b)
+  }
+
+  if (sharpN > 0) {
+    const luma = new Float32Array(w * h)
+    for (let p = 0, i = 0; i < d.length; i += 4, p++) {
+      luma[p] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]
+    }
+
+    const out = new Uint8ClampedArray(d)
+    const gain = 1.45 * sharpN
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const p = y * w + x
+        const i = p * 4
+
+        const blur = (
+          luma[p - w - 1] + 2 * luma[p - w] + luma[p - w + 1] +
+          2 * luma[p - 1] + 4 * luma[p] + 2 * luma[p + 1] +
+          luma[p + w - 1] + 2 * luma[p + w] + luma[p + w + 1]
+        ) / 16
+
+        const detail = luma[p] - blur
+        const boost = detail * gain
+
+        out[i] = clamp255(d[i] + boost)
+        out[i + 1] = clamp255(d[i + 1] + boost)
+        out[i + 2] = clamp255(d[i + 2] + boost)
+      }
+    }
+
+    imageData.data.set(out)
+  }
+
   ctx.putImageData(imageData, 0, 0)
 }
 
@@ -284,10 +366,10 @@ function detectDocumentCorners(source: HTMLCanvasElement): Point[] | null {
   return corners
 }
 
-export default function CropModal({ image, title, onConfirm, onClose }: CropModalProps) {
+export default function CropModal({ image, title, onConfirm, onClose, initialMode = 'crop', autoDetectOnOpen = false }: CropModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const canvasViewportRef = useRef<HTMLDivElement>(null)
-  const [mode, setMode] = useState<ModeType>('crop')
+  const [mode, setMode] = useState<ModeType>(initialMode)
   const [cropStart, setCropStart] = useState<Point | null>(null)
   const [cropEnd, setCropEnd]     = useState<Point | null>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -300,6 +382,9 @@ export default function CropModal({ image, title, onConfirm, onClose }: CropModa
   const [showGrid, setShowGrid]   = useState(true)
   const [brightness, setBrightness] = useState(0)   // -100 to 100
   const [contrast, setContrast]   = useState(0)     // -100 to 100
+  const [shadowRemoval, setShadowRemoval] = useState(0)
+  const [glareReduction, setGlareReduction] = useState(0)
+  const [textSharpen, setTextSharpen] = useState(0)
   const [isCompactLayout, setIsCompactLayout] = useState(false)
 
   useEffect(() => {
@@ -348,6 +433,10 @@ export default function CropModal({ image, title, onConfirm, onClose }: CropModa
     ])
   }, [image, rotation, getRotatedDims, zoom])
 
+  useEffect(() => {
+    setMode(initialMode)
+  }, [initialMode])
+
   const buildLivePreview = useCallback(() => {
     const src = document.createElement('canvas')
     src.width = image.width
@@ -356,9 +445,10 @@ export default function CropModal({ image, title, onConfirm, onClose }: CropModa
     srcCtx.filter = `brightness(${1 + brightness/100}) contrast(${1 + contrast/100})`
     srcCtx.drawImage(image, 0, 0)
     srcCtx.filter = 'none'
+    applyBackgroundCleanup(srcCtx, src.width, src.height, shadowRemoval, glareReduction, textSharpen)
     if (filter !== 'original') applyFilter(srcCtx, src.width, src.height, filter)
     return src
-  }, [image, brightness, contrast, filter])
+  }, [image, brightness, contrast, shadowRemoval, glareReduction, textSharpen, filter])
 
   // ─── Main Draw ────────────────────────────────────────────────────────────────
   const draw = useCallback(() => {
@@ -604,7 +694,7 @@ export default function CropModal({ image, title, onConfirm, onClose }: CropModa
     viewport.scrollBy({ left: dx, top: dy, behavior: 'smooth' })
   }
 
-  const autoDetect = () => {
+  const autoDetect = useCallback(() => {
     const canvas = canvasRef.current!
     const { w: imgW, h: imgH } = getRotatedDims()
 
@@ -652,6 +742,23 @@ export default function CropModal({ image, title, onConfirm, onClose }: CropModa
         { x: pad, y: canvas.height - pad },
       ])
     }
+  }, [displayScale, getRotatedDims, image, mode, rotation])
+
+  useEffect(() => {
+    if (!autoDetectOnOpen) return
+    const id = window.setTimeout(() => {
+      autoDetect()
+    }, 120)
+    return () => window.clearTimeout(id)
+  }, [autoDetectOnOpen, autoDetect])
+
+  const applyPrintReadyPreset = () => {
+    setBrightness(10)
+    setContrast(28)
+    setFilter('enhanced')
+    setShadowRemoval(58)
+    setGlareReduction(44)
+    setTextSharpen(34)
   }
 
   // ─── Export ────────────────────────────────────────────────────────────────────
@@ -694,9 +801,11 @@ export default function CropModal({ image, title, onConfirm, onClose }: CropModa
     }
 
     // Apply filter at full res
+    const finalCtx = finalCanvas.getContext('2d')!
+    applyBackgroundCleanup(finalCtx, finalCanvas.width, finalCanvas.height, shadowRemoval, glareReduction, textSharpen)
+
     if (filter !== 'original') {
-      const fCtx = finalCanvas.getContext('2d')!
-      applyFilter(fCtx, finalCanvas.width, finalCanvas.height, filter)
+      applyFilter(finalCtx, finalCanvas.width, finalCanvas.height, filter)
     }
 
     onConfirm(finalCanvas.toDataURL('image/jpeg', 0.95))
@@ -869,6 +978,29 @@ export default function CropModal({ image, title, onConfirm, onClose }: CropModa
               </div>
             </div>
 
+            <div style={{ border: '1px solid var(--border,#23262e)', borderRadius: 10, padding: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <span style={{ fontSize: 10, fontFamily: 'var(--font-mono,monospace)', color: 'var(--text2,#8b8fa8)' }}>BACKGROUND CLEANUP PRO</span>
+                <button className="btn-outline" onClick={applyPrintReadyPreset} style={{ padding: '3px 10px', fontSize: 10 }}>Print Ready</button>
+              </div>
+
+              <div style={s.sliderRow}>
+                <span style={s.sliderLabel}>Shadow {shadowRemoval}</span>
+                <input type="range" min={0} max={100} value={shadowRemoval} style={s.slider}
+                  onChange={e => setShadowRemoval(+e.target.value)} />
+              </div>
+              <div style={s.sliderRow}>
+                <span style={s.sliderLabel}>Glare {glareReduction}</span>
+                <input type="range" min={0} max={100} value={glareReduction} style={s.slider}
+                  onChange={e => setGlareReduction(+e.target.value)} />
+              </div>
+              <div style={s.sliderRow}>
+                <span style={s.sliderLabel}>Sharpen {textSharpen}</span>
+                <input type="range" min={0} max={100} value={textSharpen} style={s.slider}
+                  onChange={e => setTextSharpen(+e.target.value)} />
+              </div>
+            </div>
+
             {/* Crop-mode options */}
             {mode === 'crop' && (
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -898,6 +1030,7 @@ export default function CropModal({ image, title, onConfirm, onClose }: CropModa
               <button className="btn-outline" onClick={() => {
                 setCropStart(null); setCropEnd(null)
                 setBrightness(0); setContrast(0)
+                setShadowRemoval(0); setGlareReduction(0); setTextSharpen(0)
                 setFilter('original')
                 setZoom(1)
                 setDisplayScale(fitScale)
