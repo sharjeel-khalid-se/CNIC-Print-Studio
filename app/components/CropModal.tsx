@@ -72,53 +72,216 @@ function applyFilter(ctx: CanvasRenderingContext2D, w: number, h: number, filter
   ctx.putImageData(imageData, 0, 0)
 }
 
-// Bilinear perspective transform: maps src quad → dest rect
+function solveLinearSystem8(a: number[][], b: number[]): number[] | null {
+  const n = 8
+  const m = a.map((row, i) => [...row, b[i]])
+
+  for (let col = 0; col < n; col++) {
+    let pivot = col
+    for (let r = col + 1; r < n; r++) {
+      if (Math.abs(m[r][col]) > Math.abs(m[pivot][col])) pivot = r
+    }
+    if (Math.abs(m[pivot][col]) < 1e-9) return null
+    if (pivot !== col) {
+      const tmp = m[col]
+      m[col] = m[pivot]
+      m[pivot] = tmp
+    }
+
+    const div = m[col][col]
+    for (let c = col; c <= n; c++) m[col][c] /= div
+
+    for (let r = 0; r < n; r++) {
+      if (r === col) continue
+      const factor = m[r][col]
+      for (let c = col; c <= n; c++) {
+        m[r][c] -= factor * m[col][c]
+      }
+    }
+  }
+
+  return m.map(row => row[n])
+}
+
+function computeHomographyDestToSrc(corners: Point[], dstW: number, dstH: number): number[] | null {
+  const dest = [
+    { u: 0, v: 0 },
+    { u: dstW, v: 0 },
+    { u: dstW, v: dstH },
+    { u: 0, v: dstH },
+  ]
+
+  const A: number[][] = []
+  const B: number[] = []
+
+  for (let i = 0; i < 4; i++) {
+    const { u, v } = dest[i]
+    const { x, y } = corners[i]
+
+    A.push([u, v, 1, 0, 0, 0, -u * x, -v * x])
+    B.push(x)
+
+    A.push([0, 0, 0, u, v, 1, -u * y, -v * y])
+    B.push(y)
+  }
+
+  return solveLinearSystem8(A, B)
+}
+
+function sampleBilinear(src: Uint8ClampedArray, srcW: number, srcH: number, x: number, y: number): [number, number, number, number] {
+  const cx = Math.max(0, Math.min(srcW - 1.001, x))
+  const cy = Math.max(0, Math.min(srcH - 1.001, y))
+
+  const x0 = Math.floor(cx)
+  const y0 = Math.floor(cy)
+  const x1 = Math.min(srcW - 1, x0 + 1)
+  const y1 = Math.min(srcH - 1, y0 + 1)
+
+  const fx = cx - x0
+  const fy = cy - y0
+
+  const i00 = (y0 * srcW + x0) * 4
+  const i10 = (y0 * srcW + x1) * 4
+  const i01 = (y1 * srcW + x0) * 4
+  const i11 = (y1 * srcW + x1) * 4
+
+  const w00 = (1 - fx) * (1 - fy)
+  const w10 = fx * (1 - fy)
+  const w01 = (1 - fx) * fy
+  const w11 = fx * fy
+
+  const r = src[i00] * w00 + src[i10] * w10 + src[i01] * w01 + src[i11] * w11
+  const g = src[i00 + 1] * w00 + src[i10 + 1] * w10 + src[i01 + 1] * w01 + src[i11 + 1] * w11
+  const b = src[i00 + 2] * w00 + src[i10 + 2] * w10 + src[i01 + 2] * w01 + src[i11 + 2] * w11
+  const a = src[i00 + 3] * w00 + src[i10 + 3] * w10 + src[i01 + 3] * w01 + src[i11 + 3] * w11
+
+  return [r, g, b, a]
+}
+
+// Accurate perspective transform: maps src quad → destination rectangle.
 function perspectiveTransform(
   src: CanvasImageSource,
   srcW: number, srcH: number,
-  corners: Point[],   // TL, TR, BR, BL in source coords
+  corners: Point[],
   dstW: number, dstH: number
 ): HTMLCanvasElement {
+  const srcCanvas = document.createElement('canvas')
+  srcCanvas.width = srcW
+  srcCanvas.height = srcH
+  const srcCtx = srcCanvas.getContext('2d')!
+  srcCtx.drawImage(src, 0, 0, srcW, srcH)
+
+  const srcImg = srcCtx.getImageData(0, 0, srcW, srcH)
+  const srcData = srcImg.data
+
   const out = document.createElement('canvas')
-  out.width = dstW; out.height = dstH
-  const ctx = out.getContext('2d')!
-  // Use CSS perspective trick via multiple thin slices for a reasonable approximation
-  // (Full homography requires WebGL; this gives good results for mild skews)
-  const [tl, tr, br, bl] = corners
-  const slices = 60
-  for (let row = 0; row < slices; row++) {
-    const t0 = row / slices
-    const t1 = (row + 1) / slices
-    // Left edge
-    const lx0 = tl.x + (bl.x - tl.x) * t0, ly0 = tl.y + (bl.y - tl.y) * t0
-    const lx1 = tl.x + (bl.x - tl.x) * t1, ly1 = tl.y + (bl.y - tl.y) * t1
-    // Right edge
-    const rx0 = tr.x + (br.x - tr.x) * t0, ry0 = tr.y + (br.y - tr.y) * t0
-    const rx1 = tr.x + (br.x - tr.x) * t1, ry1 = tr.y + (br.y - tr.y) * t1
-    for (let col = 0; col < slices; col++) {
-      const s0 = col / slices, s1 = (col + 1) / slices
-      const sx = lx0 + (rx0 - lx0) * s0, sy = ly0 + (ry0 - ly0) * s0
-      const ex = lx0 + (rx0 - lx0) * s1, ey = ly0 + (ry0 - ly0) * s0
-      const bx = lx1 + (rx1 - lx1) * s0, by = ly1 + (ry1 - ly1) * s0
-      const cellW = Math.hypot(ex - sx, ey - sy)
-      const cellH = Math.hypot(bx - sx, by - sy)
-      const dstX = col * (dstW / slices), dstY = row * (dstH / slices)
-      const dstCellW = dstW / slices + 0.5, dstCellH = dstH / slices + 0.5
-      ctx.save()
-      ctx.beginPath()
-      ctx.rect(dstX, dstY, dstCellW, dstCellH)
-      ctx.clip()
-      ctx.transform(
-        cellW / (srcW / slices), 0,
-        0, cellH / (srcH / slices),
-        dstX - sx * (dstCellW / (srcW / slices)),
-        dstY - sy * (dstCellH / (srcH / slices))
-      )
-      ctx.drawImage(src, 0, 0, srcW, srcH)
-      ctx.restore()
+  out.width = Math.max(1, dstW)
+  out.height = Math.max(1, dstH)
+  const outCtx = out.getContext('2d')!
+  const outImg = outCtx.createImageData(out.width, out.height)
+  const outData = outImg.data
+
+  const h = computeHomographyDestToSrc(corners, out.width - 1, out.height - 1)
+  if (!h) return out
+
+  const [a, b, c, d, e, f, g, hh] = h
+  for (let y = 0; y < out.height; y++) {
+    for (let x = 0; x < out.width; x++) {
+      const denom = g * x + hh * y + 1
+      const sx = (a * x + b * y + c) / denom
+      const sy = (d * x + e * y + f) / denom
+      const [r, gg, bb, aa] = sampleBilinear(srcData, srcW, srcH, sx, sy)
+      const i = (y * out.width + x) * 4
+      outData[i] = r
+      outData[i + 1] = gg
+      outData[i + 2] = bb
+      outData[i + 3] = aa
     }
   }
+
+  outCtx.putImageData(outImg, 0, 0)
   return out
+}
+
+function percentile(values: number[], q: number): number {
+  if (values.length === 0) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor((sorted.length - 1) * q)))
+  return sorted[idx]
+}
+
+function detectDocumentCorners(source: HTMLCanvasElement): Point[] | null {
+  const maxSide = 520
+  const scale = Math.min(1, maxSide / Math.max(source.width, source.height))
+  const w = Math.max(64, Math.round(source.width * scale))
+  const h = Math.max(64, Math.round(source.height * scale))
+
+  const work = document.createElement('canvas')
+  work.width = w
+  work.height = h
+  const ctx = work.getContext('2d')
+  if (!ctx) return null
+  ctx.drawImage(source, 0, 0, w, h)
+
+  const data = ctx.getImageData(0, 0, w, h).data
+  const gray = new Float32Array(w * h)
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    gray[p] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+  }
+
+  const mag = new Float32Array(w * h)
+  const mags: number[] = []
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x
+      const gx =
+        -gray[i - w - 1] - 2 * gray[i - 1] - gray[i + w - 1]
+        + gray[i - w + 1] + 2 * gray[i + 1] + gray[i + w + 1]
+      const gy =
+        -gray[i - w - 1] - 2 * gray[i - w] - gray[i - w + 1]
+        + gray[i + w - 1] + 2 * gray[i + w] + gray[i + w + 1]
+      const m = Math.hypot(gx, gy)
+      mag[i] = m
+      mags.push(m)
+    }
+  }
+
+  const threshold = percentile(mags, 0.9)
+  const edgePoints: Point[] = []
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x
+      if (mag[i] >= threshold) edgePoints.push({ x, y })
+    }
+  }
+
+  if (edgePoints.length < 200) return null
+
+  const marginX = Math.round(w * 0.03)
+  const marginY = Math.round(h * 0.03)
+  const outer = edgePoints.filter(p => p.x <= marginX || p.x >= w - marginX || p.y <= marginY || p.y >= h - marginY)
+  const pts = outer.length > 40 ? outer : edgePoints
+
+  let tl = pts[0]
+  let tr = pts[0]
+  let br = pts[0]
+  let bl = pts[0]
+
+  for (const p of pts) {
+    const sum = p.x + p.y
+    const diff = p.x - p.y
+    const tlSum = tl.x + tl.y
+    const brSum = br.x + br.y
+    const trDiff = tr.x - tr.y
+    const blDiff = bl.x - bl.y
+    if (sum < tlSum) tl = p
+    if (sum > brSum) br = p
+    if (diff > trDiff) tr = p
+    if (diff < blDiff) bl = p
+  }
+
+  const corners = [tl, tr, br, bl].map(p => ({ x: p.x / scale, y: p.y / scale }))
+  return corners
 }
 
 export default function CropModal({ image, title, onConfirm, onClose }: CropModalProps) {
@@ -427,17 +590,50 @@ export default function CropModal({ image, title, onConfirm, onClose }: CropModa
 
   const autoDetect = () => {
     const canvas = canvasRef.current!
+    const { w: imgW, h: imgH } = getRotatedDims()
+
+    const rotCanvas = document.createElement('canvas')
+    rotCanvas.width = imgW
+    rotCanvas.height = imgH
+    const rotCtx = rotCanvas.getContext('2d')!
+    rotCtx.translate(imgW / 2, imgH / 2)
+    rotCtx.rotate((rotation * Math.PI) / 180)
+    rotCtx.drawImage(image, -image.width / 2, -image.height / 2)
+
+    const detected = detectDocumentCorners(rotCanvas)
+    if (detected && detected.length === 4) {
+      const scale = displayScale
+      const scaled = detected.map(c => ({
+        x: Math.max(0, Math.min(canvas.width, c.x * scale)),
+        y: Math.max(0, Math.min(canvas.height, c.y * scale)),
+      }))
+
+      if (mode === 'scan') {
+        setCorners(scaled)
+        return
+      }
+
+      const xs = scaled.map(p => p.x)
+      const ys = scaled.map(p => p.y)
+      setCropStart({ x: Math.min(...xs), y: Math.min(...ys) })
+      setCropEnd({ x: Math.max(...xs), y: Math.max(...ys) })
+      return
+    }
+
     if (mode === 'crop') {
-      const cnicW = canvas.width * 0.88; const cnicH = cnicW / CNIC_RATIO
-      const cx = (canvas.width - cnicW)/2, cy = (canvas.height - cnicH)/2
-      setCropStart({ x: cx, y: cy }); setCropEnd({ x: cx+cnicW, y: cy+cnicH })
+      const cnicW = canvas.width * 0.88
+      const cnicH = cnicW / CNIC_RATIO
+      const cx = (canvas.width - cnicW) / 2
+      const cy = (canvas.height - cnicH) / 2
+      setCropStart({ x: cx, y: cy })
+      setCropEnd({ x: cx + cnicW, y: cy + cnicH })
     } else {
       const pad = canvas.width * 0.05
       setCorners([
-        { x: pad,               y: pad },
-        { x: canvas.width-pad,  y: pad },
-        { x: canvas.width-pad,  y: canvas.height-pad },
-        { x: pad,               y: canvas.height-pad },
+        { x: pad, y: pad },
+        { x: canvas.width - pad, y: pad },
+        { x: canvas.width - pad, y: canvas.height - pad },
+        { x: pad, y: canvas.height - pad },
       ])
     }
   }
@@ -643,7 +839,7 @@ export default function CropModal({ image, title, onConfirm, onClose }: CropModa
         {/* Action Buttons */}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn-outline" onClick={() => setRotation(p => (p + 90) % 360)}>↻ Rotate</button>
-          <button className="btn-outline" onClick={autoDetect}>⊡ Auto Detect</button>
+          <button className="btn-outline" onClick={autoDetect}>⊡ Smart Detect</button>
           <button className="btn-outline" onClick={() => {
             setCropStart(null); setCropEnd(null)
             setBrightness(0); setContrast(0)
