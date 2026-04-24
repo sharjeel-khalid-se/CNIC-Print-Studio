@@ -353,8 +353,7 @@ export default function Home() {
 
           <div className="helper-panel" style={{ marginTop: 18 }}>
             <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.7 }}>
-              Workflow: Camera/Upload -> Auto Straighten -> Fine Edit -> Instant Layout -> Duplex Print.
-              Re-edit option se aap kisi bhi time original scan ko dubara khol sakte hain.
+              {'Workflow: Camera/Upload -> Auto Straighten -> Fine Edit -> Instant Layout -> Duplex Print. Re-edit option se aap kisi bhi time original scan ko dubara khol sakte hain.'}
             </div>
           </div>
         </main>
